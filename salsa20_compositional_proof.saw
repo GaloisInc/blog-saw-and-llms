@@ -1,0 +1,162 @@
+enable_experimental;
+MODULE <- llvm_load_module "salsa20.bc";
+MODULE_SKEL <- module_skeleton MODULE;
+
+rotl_skel <- function_skeleton MODULE_SKEL "rotl";
+let rotl_spec = do {
+  skeleton_globals_pre MODULE_SKEL;
+  prestate <- skeleton_prestate rotl_skel;
+pre_shift <- skeleton_arg prestate "shift";
+llvm_precond {{ (pre_shift > 0) && (pre_shift < 32) }};
+// shift must be greater than 0 and less than 32 to prevent undefined behavior
+// Confidence in provided requirements: 95%
+
+  skeleton_exec prestate;
+  poststate <- skeleton_poststate rotl_skel prestate;
+  skeleton_globals_post MODULE_SKEL;
+};
+rotl_override <- llvm_verify MODULE "rotl" [] false rotl_spec z3;
+
+s20_quarterround_skel <- function_skeleton MODULE_SKEL "s20_quarterround";
+let s20_quarterround_spec = do {
+  skeleton_globals_pre MODULE_SKEL;
+  prestate <- skeleton_prestate s20_quarterround_skel;
+  skeleton_exec prestate;
+  poststate <- skeleton_poststate s20_quarterround_skel prestate;
+  skeleton_globals_post MODULE_SKEL;
+};
+s20_quarterround_override <- llvm_verify MODULE "s20_quarterround" [rotl_override] false s20_quarterround_spec z3;
+
+s20_rowround_skel <- function_skeleton MODULE_SKEL "s20_rowround";
+s20_rowround_skel <- skeleton_resize_arg s20_rowround_skel "y" 16 true;
+// declaration indicates minimum of 16 elements
+// Confidence in provided requirements: 95%
+
+let s20_rowround_spec = do {
+  skeleton_globals_pre MODULE_SKEL;
+  prestate <- skeleton_prestate s20_rowround_skel;
+  skeleton_exec prestate;
+  poststate <- skeleton_poststate s20_rowround_skel prestate;
+  skeleton_globals_post MODULE_SKEL;
+};
+s20_rowround_override <- llvm_verify MODULE "s20_rowround" [s20_quarterround_override] false s20_rowround_spec z3;
+
+s20_columnround_skel <- function_skeleton MODULE_SKEL "s20_columnround";
+s20_columnround_skel <- skeleton_resize_arg s20_columnround_skel "x" 16 true;
+// declaration indicates minimum of 16 elements
+// Confidence in provided requirements: 95%
+
+let s20_columnround_spec = do {
+  skeleton_globals_pre MODULE_SKEL;
+  prestate <- skeleton_prestate s20_columnround_skel;
+  skeleton_exec prestate;
+  poststate <- skeleton_poststate s20_columnround_skel prestate;
+  skeleton_globals_post MODULE_SKEL;
+};
+s20_columnround_override <- llvm_verify MODULE "s20_columnround" [s20_quarterround_override] false s20_columnround_spec z3;
+
+s20_doubleround_skel <- function_skeleton MODULE_SKEL "s20_doubleround";
+s20_doubleround_skel <- skeleton_resize_arg s20_doubleround_skel "x" 16 true;
+// declaration indicates minimum of 16 elements
+// Confidence in provided requirements: 95%
+
+let s20_doubleround_spec = do {
+  skeleton_globals_pre MODULE_SKEL;
+  prestate <- skeleton_prestate s20_doubleround_skel;
+  skeleton_exec prestate;
+  poststate <- skeleton_poststate s20_doubleround_skel prestate;
+  skeleton_globals_post MODULE_SKEL;
+};
+s20_doubleround_override <- llvm_verify MODULE "s20_doubleround" [s20_columnround_override, s20_rowround_override] false s20_doubleround_spec z3;
+
+s20_littleendian_skel <- function_skeleton MODULE_SKEL "s20_littleendian";
+s20_littleendian_skel <- skeleton_resize_arg s20_littleendian_skel "b" 4 true;
+// Out of bounds error if s20_littleendian len < 4
+// Confidence in provided requirements: 100%
+
+let s20_littleendian_spec = do {
+  skeleton_globals_pre MODULE_SKEL;
+  prestate <- skeleton_prestate s20_littleendian_skel;
+  skeleton_exec prestate;
+  poststate <- skeleton_poststate s20_littleendian_skel prestate;
+  skeleton_globals_post MODULE_SKEL;
+};
+s20_littleendian_override <- llvm_verify MODULE "s20_littleendian" [] false s20_littleendian_spec z3;
+
+s20_rev_littleendian_skel <- function_skeleton MODULE_SKEL "s20_rev_littleendian";
+s20_rev_littleendian_skel <- skeleton_resize_arg s20_rev_littleendian_skel "b" 4 false;
+// Out of bounds error if s20_rev_littleendian len < 4
+// Confidence in provided requirements: 100%
+
+let s20_rev_littleendian_spec = do {
+  skeleton_globals_pre MODULE_SKEL;
+  prestate <- skeleton_prestate s20_rev_littleendian_skel;
+  skeleton_exec prestate;
+  poststate <- skeleton_poststate s20_rev_littleendian_skel prestate;
+  skeleton_globals_post MODULE_SKEL;
+};
+s20_rev_littleendian_override <- llvm_verify MODULE "s20_rev_littleendian" [] false s20_rev_littleendian_spec z3;
+
+s20_hash_skel <- function_skeleton MODULE_SKEL "s20_hash";
+s20_hash_skel <- skeleton_resize_arg s20_hash_skel "seq" 64 true;
+// declaration indicates minimum of 64 elements
+// Confidence in provided requirements: 95%
+
+let s20_hash_spec = do {
+  skeleton_globals_pre MODULE_SKEL;
+  prestate <- skeleton_prestate s20_hash_skel;
+  skeleton_exec prestate;
+  poststate <- skeleton_poststate s20_hash_skel prestate;
+  skeleton_globals_post MODULE_SKEL;
+};
+s20_hash_override <- llvm_verify MODULE "s20_hash" [s20_doubleround_override, s20_littleendian_override, s20_rev_littleendian_override] false s20_hash_spec z3;
+
+s20_expand32_skel <- function_skeleton MODULE_SKEL "s20_expand32";
+s20_expand32_skel <- skeleton_resize_arg s20_expand32_skel "keystream" 64 false;
+// Out of bounds error if keystream len < 64
+// Confidence in provided requirements: 100%
+
+s20_expand32_skel <- skeleton_resize_arg s20_expand32_skel "n" 16 true;
+// Out of bounds error if n len < 16
+// Confidence in provided requirements: 100%
+
+s20_expand32_skel <- skeleton_resize_arg s20_expand32_skel "k" 32 true;
+// Out of bounds error if k len < 32
+// Confidence in provided requirements: 100%
+
+let s20_expand32_spec = do {
+  skeleton_globals_pre MODULE_SKEL;
+  prestate <- skeleton_prestate s20_expand32_skel;
+  skeleton_exec prestate;
+  poststate <- skeleton_poststate s20_expand32_skel prestate;
+  skeleton_globals_post MODULE_SKEL;
+};
+s20_expand32_override <- llvm_verify MODULE "s20_expand32" [s20_hash_override] false s20_expand32_spec z3;
+
+s20_crypt32_skel <- function_skeleton MODULE_SKEL "s20_crypt32";
+s20_crypt32_skel <- skeleton_resize_arg s20_crypt32_skel "buf" 64 true;
+// picking an arbitrary value for testing, must equal buflen
+// Confidence in provided requirements: 80%
+
+s20_crypt32_skel <- skeleton_resize_arg s20_crypt32_skel "nonce" 8 true;
+// declaration indicates minimum of 8 elements
+// Confidence in provided requirements: 95%
+
+s20_crypt32_skel <- skeleton_resize_arg s20_crypt32_skel "key" 32 true;
+// key input to s20_expand32 is 32 bytes
+// Confidence in provided requirements: 100%
+
+let s20_crypt32_spec = do {
+  skeleton_globals_pre MODULE_SKEL;
+  prestate <- skeleton_prestate s20_crypt32_skel;
+pre_buflen <- skeleton_arg prestate "buflen";
+llvm_precond {{ pre_buflen == 64 }};
+// picking 64 as arbitrary value for testing, must equal buf size
+// Confidence in provided requirements: 80%
+
+  skeleton_exec prestate;
+  poststate <- skeleton_poststate s20_crypt32_skel prestate;
+  skeleton_globals_post MODULE_SKEL;
+};
+s20_crypt32_override <- llvm_verify MODULE "s20_crypt32" [s20_expand32_override, s20_rev_littleendian_override] false s20_crypt32_spec z3;
+

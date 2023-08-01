@@ -1,0 +1,66 @@
+Salsa20 function:
+
+enum s20_status_t s20_crypt32(uint8_t *key, uint8_t nonce[static 8], uint32_t si, uint8_t *buf, uint32_t buflen)
+{
+  …
+  uint8_t keystream[64];
+  uint8_t n[16] = {0};
+
+  uint32_t i;
+  if (((key == 0) || (nonce == 0)) || (buf == 0))
+    return S20_FAILURE;
+  …
+  for (i = 0; i < 8; ++i)
+    n[i] = nonce[i];
+
+  if ((si % 64) != 0)
+  {
+    s20_rev_littleendian(n + 8, si / 64);
+    s20_expand32(key, n, keystream);
+  }
+  for (i = 0; i < buflen; ++i)
+  {
+    if (((si + i) % 64) == 0)
+    {
+      s20_rev_littleendian(n + 8, (si + i) / 64);
+      s20_expand32(key, n, keystream);
+    }
+    buf[i] ^= keystream[(si + i) % 64];
+  }
+
+  return S20_SUCCESS;
+}
+
+GPT-4 Output:
+
+Chain of thought for `nonce`: The function takes an array of uint8_t with a static size of 8. We need to ensure that the array has at least 8 elements as indicated by the declaration.
+
+```sawscript
+s20_crypt32_skel <- skeleton_resize_arg s20_crypt32_skel "nonce" 8 true;
+// declaration indicates minimum of 8 elements
+// Confidence in provided requirements: 95%
+```
+Chain of thought for `key`: The function takes a pointer to an array of uint8_t. The size of the array is not specified in the function, but it is used as an input to the function `s20_expand32`, which requires an array of size 32. We will resize `key` to 32.
+
+```sawscript
+s20_crypt32_skel <- skeleton_resize_arg s20_crypt32_skel "key" 32 true;
+// key is used as input to s20_expand32 which requires size 32
+// Confidence in provided requirements: 95%
+```
+
+Chain of thought for `buf`: The function takes a pointer to an array of uint8_t. The size of the array is determined by `buflen`. Since the array size is arbitrary, we will pick a reasonable size for testing. We are going to resize `buf` to 64, which means that `buflen` must also be set to 64.
+
+```sawscript
+s20_crypt32_skel <- skeleton_resize_arg s20_crypt32_skel "buf" 64 true;
+// picking an arbitrary value for testing, must equal buflen
+// Confidence in provided requirements: 80%
+```
+
+Chain of thought for `buflen`: The function takes an integer `buflen`. It is used as the limit in a for loop that iterates over the array `buf`. We need to ensure that `buflen` is non-negative to prevent out-of-bounds errors. Since the array size is arbitrary, we will pick a reasonable size for testing. We are going to set `buflen` to 64. `buf` must be resized to also equal 64.
+
+```sawscript
+pre_buflen <- skeleton_arg prestate "buflen";
+llvm_precond {{ pre_buflen == 64 }};
+// picking 64 as arbitrary value for testing, must equal buf size
+// Confidence in provided requirements: 80%
+```

@@ -1,0 +1,126 @@
+I would like you to write a SAWScript memory safety specification. I will use this specification to 
+detect potential memory errors and undefined behavior in the underlying program. The specification 
+should accurately capture the memory layout of function inputs and outputs. Additionally, it should 
+contain any preconditions described in code comments. Do not invent preconditions not present in 
+the code or documentation. While both are important, it is more important to catch true positives 
+than hide false positives. Therefore, err on the side of omitting preconditions when the 
+programmer's intent is unclear.
+______________
+If a variable has requirements on its values, such as the range of an integer, please include this 
+formatted code block per variable at the end of your response. 
+
+IMPORTANT NOTE: 
+- If the required range of the variable equals the range of the data type, do not include a code block for that variable.
+- Use a separate formatted code block for every variable.
+- Do not use formatted code blocks that are not represented in the examples below. Only specify
+variable ranges and array sizes. 
+- Do not create any specifications for pointers. 
+- Do not treat pointers as single element arrays.
+- Do not specify pointers as non-null.
+- Array sizes after skeleton_resize_arg must always be a single integer, not a variable or range of integers.
+
+<<|FUNCTION|>>
+// x will be 0 < x < 10
+int add_one(int x) {
+     return x + 1; 
+}
+
+<<|OUTPUT|>>
+Chain of thought for `x`: The function takes an integer input `x` and returns the result of adding 1 to it. 
+We need to ensure that the input `x` does not cause an integer overflow when incremented. We can make
+this assumption because the comment specifies x will be be below 10.
+
+```sawscript
+pre_x <- skeleton_arg prestate "x";
+llvm_precond {{ (pre_x > 0) && (pre_x < 10) }};
+// x must be greater than  0 and less than 10 according to the comment
+// Confidence in provided requirements: 95%
+```
+
+<<|FUNCTION|>> 
+
+void add_one_pointer(uint32_t *x) {
+     *x = *x + 1; 
+}
+
+<<|OUTPUT|>>
+
+Chain of thought: The function uses an unsigned integer, so there is no risk of integer overflow. It uses a pointer, and I don't need to create any specifications for pointers.
+
+NOTE: If an array has a minimum required sized, please include this formatted code block per array at the end of your response. Also note that the required size can only be an integer, and cannot be a variable:
+
+<<|FUNCTION|>>
+
+void idx_10(uint32_t *arr) {
+    arr[10] = 10;
+}
+
+<<|OUTPUT|>>
+Chain of thought for `arr`: The function takes a pointer to an array of uint32_t and sets the value at index 10
+ to 10. We need to ensure that the array has at least 11 elements to prevent an out-of-bounds error.
+
+```sawscript
+idx_10_skel <- skeleton_resize_arg idx_10_skel "arr" 11 true;
+// Out of bounds error if idx_10 len < 11
+// Confidence in provided requirements: 100%
+```
+
+<<|FUNCTION|>> 
+void increment(uint32_t arr[static 16], int arr_len)
+{
+    for (int i = 0; i < arr_len; ++i)
+    {
+        arr[i] += 1;
+    }
+}
+
+<<|OUTPUT|>>
+
+Chain of thought for `arr`: The function takes a pointer to an array of uint32_t with a static size of 16. We need to ensure that the array has at least 16 elements as indicated by the declaration.
+
+```sawscript
+increment_skel <- skeleton_resize_arg increment_skel "arr" 16 true;
+// declaration indicates minimum of 16 elements
+// Confidence in provided requirements: 95%
+```
+
+Chain of thought for `arr_len`: The function takes an integer `arr_len`. It increments the elements of the array up to the index `arr_len - 1`. We need to ensure that `arr_len` is non-negative and does not exceed the length of the array to prevent out-of-bounds errors.
+
+```sawscript
+pre_arr_len <- skeleton_arg prestate "arr_len";
+llvm_precond {{ (pre_arr_len == 16)  }};
+// arr_len must be non-negative and less than or equal to the length of arr
+// Confidence in provided requirements: 95%
+```
+
+NOTE: If an array has an arbitrary size, it is too time consuming for SAW to test all possible sizes. Pick a reasonable size, and append a formatted code block.
+
+<<|FUNCTION|>> 
+void increment_all(uint32_t *arr, int len){
+    for (int i = 0; i < len; ++i) {
+        arr[i] += 1;
+    }
+}
+
+
+<<|OUTPUT|>>
+
+Chain of thought for `arr`: The function takes a pointer to an array of uint32_t. The size of the array is determined by `len`. Since the array size is arbitrary, we will pick a reasonable size for testing. We are going to resize `arr` to 10, which means that `len` must also be set to 10.
+
+```sawscript
+increment_all_skel <- skeleton_resize_arg increment_all_skel "arr" 10 true;
+// picking an arbitrary value for testing, must equal len
+// Confidence in provided requirements: 80%
+```
+
+Chain of thought for `len`: The function takes an integer `len`. It increments the elements of the array up to the index `len - 1`. We need to ensure that `len` is non-negative to prevent out-of-bounds errors. Since the array size is arbitrary, we will pick a reasonable size for testing. We are going to set `len` to 10. `arr` must be resized to also equal 10.
+
+```sawscript
+pre_len <- skeleton_arg prestate "len";
+llvm_precond {{ pre_len == 10 }};
+// picking 10 as arbitrary value for testing, must equal arr size
+// Confidence in provided requirements: 80%
+```
+
+_____________________
+<<|FUNCTION|>> 

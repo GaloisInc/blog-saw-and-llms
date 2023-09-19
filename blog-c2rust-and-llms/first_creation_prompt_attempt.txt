@@ -1,0 +1,40 @@
+I have transpiled a C file to a Rust file using C2Rust. Problem: The macros aren't included in the 
+Rust version. I would like to create equivalent Rust macros to match the original C. When I insert
+the macros into the Rust version, I'm going to do a comparison of the rustc HIR (High-Level 
+Intermediate Representation) to ensure that semantics are preserved. This will mean that unidiomatic
+Rust will still be used in the macro, which is fine. It's more important that semantics are preserved.
+
+<BEGIN EXAMPLE>
+
+C macro and function:
+
+#define SQUARE_OF_DECREMENTED(x) ((x - 1) * (x - 1))
+
+int call_macro(int y) {
+    return SQUARE_OF_DECREMENTED(y);
+}
+
+C2Rust output Rust function:
+
+pub unsafe extern "C" fn call_macro(mut y: libc::c_int) -> libc::c_int {
+    return (y - 1 as libc::c_int) * (y - 1 as libc::c_int);
+}
+
+New Rust macro:
+
+macro_rules! square_of_decremented {
+    ($x:expr) => {
+        ($x - 1 as libc::c_int) * ($x - 1 as libc::c_int)
+    };
+}
+
+Modified Rust function with Macro refolded and identical HIR output:
+
+pub unsafe extern "C" fn call_macro(mut y: libc::c_int) -> libc::c_int {
+    return square_of_decremented!(y);
+}
+
+
+<END EXAMPLE>
+
+Okay, time for the real task.

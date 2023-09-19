@@ -1,0 +1,180 @@
+As an example, here is a simplified C / Rust function pair I created for the `get_intermediate_bits` macro.
+From my testing, GPT-4 can also do this task, but I didn't take the time to implement it for this proof of concept.
+
+Simplified version:
+
+#define get_intermediate_bits(14 - bitdepth_from_max(bitdepth_max))
+
+unsafe extern "C" fn w_mask_c(
+    mut dst: *mut pixel,
+    dst_stride: ptrdiff_t,
+    mut tmp1: *const int16_t,
+    mut tmp2: *const int16_t,
+    w: libc::c_int,
+    mut h: libc::c_int,
+    mut mask: *mut uint8_t,
+    sign: libc::c_int,
+    ss_hor: libc::c_int,
+    ss_ver: libc::c_int,
+    bitdepth_max: libc::c_int,
+) {
+    let intermediate_bits: libc::c_int =
+        14 as libc::c_int - (32 as libc::c_int - clz(bitdepth_max as libc::c_uint));
+}
+
+static void w_mask_c(pixel *dst, const ptrdiff_t dst_stride,
+                     const int16_t *tmp1, const int16_t *tmp2, const int w, int h,
+                     uint8_t *mask, const int sign,
+                     const int ss_hor, const int ss_ver HIGHBD_DECL_SUFFIX)
+{
+    const int intermediate_bits = get_intermediate_bits(bitdepth_max);
+}
+
+Full version:
+
+static void w_mask_c(pixel *dst, const ptrdiff_t dst_stride,
+                     const int16_t *tmp1, const int16_t *tmp2, const int w, int h,
+                     uint8_t *mask, const int sign,
+                     const int ss_hor, const int ss_ver HIGHBD_DECL_SUFFIX)
+{
+    // store mask at 2x2 resolution, i.e. store 2x1 sum for even rows,
+    // and then load this intermediate to calculate final value for odd rows
+    const int intermediate_bits = get_intermediate_bits(bitdepth_max);
+    const int bitdepth = bitdepth_from_max(bitdepth_max);
+    const int sh = intermediate_bits + 6;
+    const int rnd = (32 << intermediate_bits) + PREP_BIAS * 64;
+    const int mask_sh = bitdepth + intermediate_bits - 4;
+    const int mask_rnd = 1 << (mask_sh - 5);
+    do
+    {
+        for (int x = 0; x < w; x++)
+        {
+            const int m = imin(38 + ((abs(tmp1[x] - tmp2[x]) + mask_rnd) >> mask_sh), 64);
+            dst[x] = iclip_pixel((tmp1[x] * m +
+                                  tmp2[x] * (64 - m) + rnd) >>
+                                 sh);
+
+            if (ss_hor)
+            {
+                x++;
+
+                const int n = imin(38 + ((abs(tmp1[x] - tmp2[x]) + mask_rnd) >> mask_sh), 64);
+                dst[x] = iclip_pixel((tmp1[x] * n +
+                                      tmp2[x] * (64 - n) + rnd) >>
+                                     sh);
+
+                if (h & ss_ver)
+                {
+                    mask[x >> 1] = (m + n + mask[x >> 1] + 2 - sign) >> 2;
+                }
+                else if (ss_ver)
+                {
+                    mask[x >> 1] = m + n;
+                }
+                else
+                {
+                    mask[x >> 1] = (m + n + 1 - sign) >> 1;
+                }
+            }
+            else
+            {
+                mask[x] = m;
+            }
+        }
+
+        tmp1 += w;
+        tmp2 += w;
+        dst += PXSTRIDE(dst_stride);
+        if (!ss_ver || (h & 1))
+            mask += w >> ss_hor;
+    } while (--h);
+}
+
+unsafe extern "C" fn w_mask_c(
+    mut dst: *mut pixel,
+    dst_stride: ptrdiff_t,
+    mut tmp1: *const int16_t,
+    mut tmp2: *const int16_t,
+    w: libc::c_int,
+    mut h: libc::c_int,
+    mut mask: *mut uint8_t,
+    sign: libc::c_int,
+    ss_hor: libc::c_int,
+    ss_ver: libc::c_int,
+    bitdepth_max: libc::c_int,
+) {
+    let intermediate_bits: libc::c_int =
+        14 as libc::c_int - (32 as libc::c_int - clz(bitdepth_max as libc::c_uint));
+    let bitdepth: libc::c_int = 32 as libc::c_int - clz(bitdepth_max as libc::c_uint);
+    let sh: libc::c_int = intermediate_bits + 6 as libc::c_int;
+    let rnd: libc::c_int =
+        ((32 as libc::c_int) << intermediate_bits) + 8192 as libc::c_int * 64 as libc::c_int;
+    let mask_sh: libc::c_int = bitdepth + intermediate_bits - 4 as libc::c_int;
+    let mask_rnd: libc::c_int = (1 as libc::c_int) << mask_sh - 5 as libc::c_int;
+    loop {
+        let mut x: libc::c_int = 0 as libc::c_int;
+        while x < w {
+            let m: libc::c_int = imin(
+                38 as libc::c_int
+                    + (abs(*tmp1.offset(x as isize) as libc::c_int
+                        - *tmp2.offset(x as isize) as libc::c_int)
+                        + mask_rnd
+                        >> mask_sh),
+                64 as libc::c_int,
+            );
+            *dst.offset(x as isize) = iclip(
+                *tmp1.offset(x as isize) as libc::c_int * m
+                    + *tmp2.offset(x as isize) as libc::c_int * (64 as libc::c_int - m)
+                    + rnd
+                    >> sh,
+                0 as libc::c_int,
+                bitdepth_max,
+            ) as pixel;
+            if ss_hor != 0 {
+                x += 1;
+                let n: libc::c_int = imin(
+                    38 as libc::c_int
+                        + (abs(*tmp1.offset(x as isize) as libc::c_int
+                            - *tmp2.offset(x as isize) as libc::c_int)
+                            + mask_rnd
+                            >> mask_sh),
+                    64 as libc::c_int,
+                );
+                *dst.offset(x as isize) = iclip(
+                    *tmp1.offset(x as isize) as libc::c_int * n
+                        + *tmp2.offset(x as isize) as libc::c_int * (64 as libc::c_int - n)
+                        + rnd
+                        >> sh,
+                    0 as libc::c_int,
+                    bitdepth_max,
+                ) as pixel;
+                if h & ss_ver != 0 {
+                    *mask.offset((x >> 1 as libc::c_int) as isize) =
+                        (m + n
+                            + *mask.offset((x >> 1 as libc::c_int) as isize) as libc::c_int
+                            + 2 as libc::c_int
+                            - sign
+                            >> 2 as libc::c_int) as uint8_t;
+                } else if ss_ver != 0 {
+                    *mask.offset((x >> 1 as libc::c_int) as isize) = (m + n) as uint8_t;
+                } else {
+                    *mask.offset((x >> 1 as libc::c_int) as isize) =
+                        (m + n + 1 as libc::c_int - sign >> 1 as libc::c_int) as uint8_t;
+                }
+            } else {
+                *mask.offset(x as isize) = m as uint8_t;
+            }
+            x += 1;
+        }
+        tmp1 = tmp1.offset(w as isize);
+        tmp2 = tmp2.offset(w as isize);
+        dst = dst.offset(PXSTRIDE(dst_stride) as isize);
+        if ss_ver == 0 || h & 1 as libc::c_int != 0 {
+            mask = mask.offset((w >> ss_hor) as isize);
+        }
+        h -= 1;
+        if !(h != 0) {
+            break;
+        }
+    }
+}
